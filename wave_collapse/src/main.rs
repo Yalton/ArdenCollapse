@@ -3,6 +3,7 @@ use rand::Rng;
 use glob;
 use rand;
 use std::fmt;
+use std::env;
 use image::{ImageBuffer, GenericImageView, DynamicImage, ImageError};
 use std::path::Path;
 
@@ -38,10 +39,21 @@ impl Tile {
     }
 }
 
+fn id_to_name(id: u32) -> &'static str {
+    match id {
+        1 => "plains",
+        2 => "forest",
+        3 => "dessert",
+        4 => "ocean",
+        _ => panic!("Invalid ID"),
+    }
+}
+
 fn stitch_images(grid: &Grid) -> Result<(), ImageError> {
     // Load the first image to get the dimensions
     let first_tile = &grid.cells[0][0];
-    let first_tile_path = format!("tileset/{}_{}.png", first_tile.value.unwrap(), first_tile.name);
+    let first_tile_name = id_to_name(first_tile.value.unwrap() as u32);
+    let first_tile_path = format!("tileset/{}_{}.png", first_tile.value.unwrap(), first_tile_name);
     let first_image: DynamicImage = image::open(&Path::new(&first_tile_path))?;
 
     // get the dimensions
@@ -56,7 +68,8 @@ fn stitch_images(grid: &Grid) -> Result<(), ImageError> {
     for (y, row) in grid.cells.iter().enumerate() {
         for (x, cell) in row.iter().enumerate() {
             if let Some(value) = cell.value {
-                let tile_path = format!("tileset/{}_{}.png", value, cell.name);
+                let tile_name = id_to_name(value as u32);
+                let tile_path = format!("tileset/{}_{}.png", value, tile_name);
                 let tile_image = image::open(&Path::new(&tile_path))?.into_rgba8();
                 
                 // paste the image at the correct position
@@ -66,33 +79,57 @@ fn stitch_images(grid: &Grid) -> Result<(), ImageError> {
             }
         }
     }
+    
 
     // save the final image
     final_image.save("final_image.png")
 }
 
-fn load_tiles(possible_values: Vec<usize>) -> Vec<Tile> {
+fn load_tiles(possible_values: Vec<usize>, current_dir: &Path) -> Vec<Tile> {
+    //println!("Current Directory is {}", current_dir as str); 
+
+    let tileset_path = current_dir.join("tileset/*.png");
     let mut tiles = vec![];
-    for entry in glob::glob("tileset/*.png").expect("Failed to read glob pattern") {
+    for entry in glob::glob(tileset_path.to_str().unwrap()).expect("Failed to read glob pattern") {
         match entry {
             Ok(path) => {
                 let filename = path.file_stem().unwrap().to_string_lossy();
+                println!("Processing file: {}", filename); // Print the file name being processed
+
                 let parts: Vec<_> = filename.split('_').collect();
-                let id = parts[0].parse::<usize>().unwrap();
+
+                // Check that filename is in expected format
+                if parts.len() != 2 {
+                    println!("Unexpected filename format: {}", filename);
+                    continue;
+                }
+
+                let id = match parts[0].parse::<usize>() {
+                    Ok(id) => id,
+                    Err(_) => {
+                        println!("Failed to parse id from filename: {}", filename);
+                        continue;
+                    }
+                };
+
                 let name = parts[1].to_string();
-                tiles.push(Tile::new(id, name, possible_values.clone()));
+                tiles.push(Tile::new(id, name.clone(), possible_values.clone()));
+
+                println!("Successfully loaded tile with id: {}, name: {}", id, name); 
             }
-            Err(e) => println!("{:?}", e),
+            Err(e) => println!("Error encountered: {:?}", e), // Print error details
         }
     }
+    println!("Loaded {} tiles in total.", tiles.len()); // Print total number of tiles loaded
     tiles
 }
+
 
 fn get_ruleset() -> HashMap<usize, Vec<usize>> {
     let mut rules = HashMap::new();
     rules.insert(1, vec![1,2,3]);
-    rules.insert(2, vec![1,2,3]);
-    rules.insert(3, vec![3,4]);
+    rules.insert(2, vec![1,2]);
+    rules.insert(3, vec![1,3,4]);
     rules.insert(4, vec![3,4]);
     rules
 }
@@ -105,8 +142,11 @@ struct Grid {
 
 
 impl Grid {
-    fn new(size: usize, tiles: Vec<Tile>, rules: HashMap<usize, Vec<usize>>) -> Self {
-        Self {
+    fn new(size: usize, tiles: Vec<Tile>, rules: HashMap<usize, Vec<usize>>) -> Result<Self, &'static str> {
+        if tiles.is_empty() {
+            return Err("No tiles provided");
+        }
+        Ok(Self {
             cells: (0..size)
                 .map(|_| (0..size)
                 .map(|_| {
@@ -116,8 +156,10 @@ impl Grid {
                 .collect(),
             rules,
             initial_collapse_done: false,
-        }
+        })
     }
+    
+
 
     fn collapse(&mut self) {
         let mut rng = rand::thread_rng();
@@ -167,15 +209,15 @@ impl Grid {
     }
     
     fn run(&mut self) {
-        self.collapse();
-        //self.propagate();
-        println!("{}", self); // print the grid after each step
+        // self.collapse();
+        // //self.propagate();
+        // println!("{}", self); // print the grid after each step
         
-        // while !self.is_fully_collapsed() {
-        //     self.collapse();
-        //     self.propagate();
-        //     println!("{}", self); // print the grid after each step
-        // }
+        while !self.is_fully_collapsed() {
+            self.collapse();
+            self.propagate();
+            println!("{}", self); // print the grid after each step
+        }
     }
 
     fn is_fully_collapsed(&self) -> bool {
@@ -186,13 +228,24 @@ impl Grid {
 
 // And then modify the `main` function:
 fn main() {
+    let current_dir = env::current_dir().unwrap();
     let possible_values = vec![1, 2, 3, 4]; // or whatever you want this to be
-    let tiles = load_tiles(possible_values.clone());
+    let tiles = load_tiles(possible_values.clone(), &current_dir);
     let rules = get_ruleset();
-    let mut grid = Grid::new(10, tiles, rules);
+    let grid_result = Grid::new(30, tiles, rules);
+
+    // Unwrap the grid or exit if there was an error
+    let mut grid = match grid_result {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("Failed to create grid: {}", e);
+            return;
+        }
+    };
+
     grid.run();
-    // match stitch_images(&grid) {
-    //     Ok(_) => println!("Image stitching completed successfully."),
-    //     Err(e) => println!("Failed to stitch images: {:?}", e),
-    // }
+    match stitch_images(&grid) {
+        Ok(_) => println!("Image stitching completed successfully."),
+        Err(e) => println!("Failed to stitch images: {:?}", e),
+    }
 }
