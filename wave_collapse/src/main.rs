@@ -232,7 +232,7 @@ fn main() {
     let possible_values = vec![1, 2, 3, 4]; // or whatever you want this to be
     let tiles = load_tiles(possible_values.clone(), &current_dir);
     let rules = get_ruleset();
-    let grid_result = Grid::new(30, tiles, rules);
+    let grid_result = Grid::new(35, tiles, rules);
 
     // Unwrap the grid or exit if there was an error
     let mut grid = match grid_result {
