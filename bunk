@@ -1,0 +1,43 @@
+use iced::{Application, Command, Element, Clipboard, Settings, Image, executor};
+use image::{ImageBuffer, GenericImageView, DynamicImage, ImageError};
+use crate::{Grid, load_tiles, get_ruleset, stitch_images};
+
+#[derive(Debug)]
+pub enum Message {}
+
+pub struct GUI { 
+    pub grid: Grid,
+}
+
+pub struct Flags { 
+    pub grid: Grid,
+}
+
+impl Application for GUI {
+    type Executor = executor::Default;
+    type Message = Message;
+    type Flags = Flags;
+
+    fn new(flags: Flags) -> (Self, Command<Self::Message>) { 
+        (
+            Self {
+                grid: flags.grid,
+            },
+            Command::none(),
+        )
+    }
+    
+    fn title(&self) -> String {
+        String::from("Live Image Display")
+    }
+
+    fn update(&mut self, message: Self::Message, _clipboard: &mut Clipboard) -> Command<Self::Message> {
+        Command::none()
+    }
+    
+    fn view(&mut self) -> Element<Self::Message> {
+        let image_data = include_bytes!("../final_image.png");
+        let image_handle = iced::image::Handle::from_memory(image_data.to_vec());
+        Image::new(image_handle).into()
+    }
+}
